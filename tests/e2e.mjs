@@ -1,0 +1,48 @@
+import { chromium } from '@playwright/test';
+import assert from 'node:assert/strict';
+import { promises as fs } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+const physical=process.argv.includes('--physical');
+const browser=await chromium.launch({executablePath:'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',headless:true,args:physical?['--use-fake-ui-for-media-stream']:['--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream']});
+const context=await browser.newContext({viewport:{width:1440,height:1060},permissions:['camera']});
+const page=await context.newPage();const errors=[];const logs=[];
+page.on('pageerror',e=>{errors.push(e.message);console.log('PAGE ERROR:',e.message);});page.on('console',m=>{if(m.type()==='error'&&!m.text().includes('[W:onnxruntime:')){logs.push(m.text());console.log('CONSOLE ERROR:',m.text());}});
+page.on('requestfailed',r=>{if(r.failure()?.errorText!=='net::ERR_ABORTED')console.log('NETWORK ERROR:',r.url(),r.failure()?.errorText);});
+const base=process.env.TEST_URL||'http://127.0.0.1:8795';
+try{
+ await page.goto(base);await page.waitForSelector('#stat-splats:has-text("82.9k")');
+ await page.locator('#connect').click();await page.waitForFunction(()=>!document.getElementById('record').disabled,{},{timeout:20000});
+ const settings=await page.locator('#live-video').evaluate(v=>v.srcObject.getVideoTracks()[0].getSettings());
+ console.log('Camera connected:',JSON.stringify({width:settings.width,height:settings.height,frameRate:settings.frameRate,physical}));
+ await page.waitForFunction(()=>/Ready|Could not/.test(document.getElementById('engine-state').textContent),{},{timeout:90000});
+ assert.match(await page.locator('#engine-state').innerText(),/^Ready/);
+ console.log('Engine:',await page.locator('#engine-state').innerText());
+ await page.locator('#record').click();await page.waitForFunction(()=>document.getElementById('record').textContent.includes('Stop & save'));
+ await page.waitForFunction(()=>parseFloat(document.getElementById('save-progress').textContent)>0,{},{timeout:15000});
+ await page.waitForTimeout(7000);
+ const first=await page.evaluate(async()=>{const list=await(await fetch('/api/sessions')).json();return list[0];});
+ assert.ok(first.bytes>1000);console.log('Continuous disk writes:',first.bytes,'bytes;',first.chunks,'chunks');
+ await page.locator('#rewind').click();await page.waitForFunction(()=>document.getElementById('source-tag').textContent==='REPLAY',{},{timeout:30000});
+ await page.locator('#play').click();await page.waitForTimeout(1500);
+ const playbackTime=await page.locator('#playback-video').evaluate(v=>v.currentTime);assert.ok(playbackTime>0);
+ const second=await page.evaluate(async()=>{const list=await(await fetch('/api/sessions')).json();return list[0];});assert.ok(second.bytes>first.bytes);console.log('Rewind while recording:',playbackTime.toFixed(2),'seconds; capture grew to',second.bytes);
+ await page.locator('#play').click();await page.locator('#mode-spatial').click();await page.waitForSelector('#depth-overlay',{state:'hidden',timeout:120000});
+ assert.equal(await page.locator('#spatial-canvas').isVisible(),true);
+ await page.waitForFunction(()=>!['—',''].includes(document.getElementById('stat-depth').textContent),{},{timeout:120000});
+ const box=await page.locator('#spatial-canvas').boundingBox();await page.mouse.move(box.x+box.width*.5,box.y+box.height*.5);await page.mouse.down();await page.mouse.move(box.x+box.width*.55,box.y+box.height*.54,{steps:15});await page.mouse.up();await page.waitForTimeout(500);
+ if(!physical)await page.screenshot({path:'artifacts/04-recorded-spatial.png',fullPage:true});
+ await page.waitForFunction(()=>Number(document.getElementById('stat-fps').textContent)>0,{},{timeout:10000});
+ console.log('Spatial render:',await page.locator('#stat-fps').innerText(),'FPS;',await page.locator('#stat-depth').innerText(),'depth latency');
+ await page.locator('#record').click();await page.waitForFunction(()=>document.getElementById('capture-state').textContent.includes('Recording saved'),{},{timeout:60000});
+ const saved=await page.evaluate(async()=>{const list=await(await fetch('/api/sessions')).json();return list[0];});assert.equal(saved.status,'saved');assert.ok(saved.depthFrames>0);
+ const config=await(await fetch(base+'/api/config')).json();const videoPath=config.recordingsDir+'/'+saved.id+'/recording.webm';
+ const probe=JSON.parse(execFileSync('ffprobe',['-v','error','-show_entries','format=duration:stream=codec_name,width,height','-of','json',videoPath],{encoding:'utf8',windowsHide:true}));assert.ok(Number(probe.format.duration)>5);
+ console.log('Saved WebM verified:',JSON.stringify(probe));
+ await page.reload();await page.locator('#library-toggle').click();await page.locator('.recording-row').first().locator('button').click();await page.waitForFunction(()=>document.getElementById('source-tag').textContent==='REPLAY');
+ await page.locator('#mode-spatial').click();await page.waitForSelector('#depth-overlay',{state:'hidden',timeout:120000});
+ console.log('Reopened original video and saved depth after reload.');
+ assert.deepEqual(errors,[]);assert.deepEqual(logs,[]);
+ await fs.writeFile(physical?'artifacts/physical-camera-result.json':'artifacts/e2e-result.json',JSON.stringify({physical,settings:{width:settings.width,height:settings.height,frameRate:settings.frameRate},saved,probe,pageErrors:errors,consoleErrors:logs},null,2));
+ console.log('PASS: camera → disk → rewind while capture continues → 4D orbit → save → reopen.');
+}catch(e){console.error('Page errors:',errors,'Console errors:',logs);console.error('UI:',await page.locator('#engine-state').innerText().catch(()=>''),await page.locator('#toast').innerText().catch(()=>''));if(!physical)await page.screenshot({path:'artifacts/e2e-failure.png',fullPage:true});throw e;}
+finally{await browser.close();}

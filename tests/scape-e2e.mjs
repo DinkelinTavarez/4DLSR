@@ -1,0 +1,46 @@
+import {chromium} from '@playwright/test';
+import assert from 'node:assert/strict';
+const base='http://127.0.0.1:8794',job=process.argv[2]||'829bdc8f-01bc-4b45-bdc2-53e5d5bfea4e';
+const info=await(await fetch(`${base}/api/reconstructions/${job}`)).json();
+const browser=await chromium.launch({executablePath:'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',headless:true});
+try{
+ const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.addInitScript(()=>localStorage.setItem('spatial-auto-connect','false'));await page.goto(base+'/rig.html');await page.locator('[data-lab-tab="library"]').click();
+ await page.locator('#takes-list .take-row').filter({has:page.locator(`a[href="/api/rigs/${info.rigId}/manifest"]`)}).getByRole('button',{name:'Reconstruct combined 3D',exact:true}).click();
+ await page.locator(`[data-job-id="${job}"]`).getByRole('button',{name:'Open combined 3D',exact:true}).click();
+ const ready=kind=>page.waitForFunction(k=>{const c=document.getElementById('combined-canvas');return c.dataset.representation===k&&c.getAttribute('aria-busy')==='false';},kind);
+ await ready('gaussians');await page.locator('#combined-fullscreen').click();
+ await page.locator('#combined-time').evaluate(el=>{el.value='20';el.dispatchEvent(new Event('input',{bubbles:true}));});
+ await page.waitForFunction(()=>document.getElementById('combined-frame').textContent.startsWith('10.15'));await page.waitForTimeout(200);
+ const before=await page.locator('#combined-canvas').screenshot();
+ await page.locator('#combined-mode-scape').click();await ready('scape');
+ assert.equal(await page.locator('#combined-mode-scape').getAttribute('aria-pressed'),'true');assert.equal(await page.locator('#combined-time').inputValue(),'20');
+ assert.equal(await page.locator('#combined-play').isDisabled(),true);assert.equal(await page.locator('#combined-time').isDisabled(),true);
+ assert.match(await page.locator('#combined-playback-status').textContent(),/Static layout from 0.15/);
+ const layout=await page.locator('#combined-scape-download').evaluate(async el=>await(await fetch(el.href)).json());
+ assert.equal(layout.jobId,job);assert.equal(layout.referenceTime,.15);assert.equal(layout.surfaces.filter(p=>p.evidence==='assumed').length,3);
+ assert.ok(layout.surfaces.every(s=>s.corners.length===4));
+ await page.locator('#combined-mode-gaussians').click();await ready('gaussians');await page.waitForTimeout(200);
+ assert.deepEqual(await page.locator('#combined-canvas').screenshot(),before,'Mode switch must preserve the paused time and camera pose');
+ assert.equal(await page.locator('#combined-play').isEnabled(),true);
+ await page.locator('#combined-mode-scape').click();await ready('scape');await page.locator('#combined-frame-model').click();await page.waitForTimeout(200);
+ const completed=await page.locator('#combined-canvas').screenshot({path:'artifacts/scape-completed.png'});
+ await page.locator('#combined-scape-assumptions').uncheck();await page.waitForTimeout(100);
+ const fitted=await page.locator('#combined-canvas').screenshot({path:'artifacts/scape-fitted.png'});assert.notDeepEqual(fitted,completed);
+ await page.locator('#combined-scape-assumptions').check();await page.locator('#combined-scape-ceiling').check();await page.waitForTimeout(100);
+ const ceiling=await page.locator('#combined-canvas').screenshot();assert.notDeepEqual(ceiling,completed);
+ await page.locator('#combined-scape-cutaway').uncheck();await page.waitForTimeout(100);assert.notDeepEqual(await page.locator('#combined-canvas').screenshot(),ceiling);
+ await page.locator('#combined-scape-cutaway').check();await page.locator('#combined-scape-ceiling').uncheck();
+ await page.locator('#combined-canvas').click();await page.keyboard.down('w');await page.waitForTimeout(200);await page.keyboard.up('w');await page.keyboard.press('x');
+ assert.notDeepEqual(await page.locator('#combined-canvas').screenshot(),completed,'Scape must support free flight');
+ // Pending mode changes cannot replace the final selected representation.
+ for(const mode of ['model','scape','gaussians','scape','model'])await page.locator('#combined-mode-'+mode).click();
+ await ready('surface');assert.equal(await page.locator('#combined-time').inputValue(),'20');
+ await page.locator('#combined-mode-scape').click();await ready('scape');
+ await page.locator('#combined-fullscreen').click();
+ await page.locator('[data-job-id="0898ce70-c693-42cc-bf22-97e0ca5638f5"]').getByRole('button',{name:'Open combined 3D',exact:true}).click();
+ await ready('gaussians');assert.equal(await page.locator('#combined-mode-scape').isDisabled(),true);assert.equal(await page.locator('#combined-mode-model').isDisabled(),true);
+ assert.match(await page.locator('#combined-geometry-status').textContent(),/older build/);
+ assert.deepEqual(errors,[]);
+ console.log(JSON.stringify({job,planes:layout.surfaces.length,passed:['three distinct modes','same camera and replay time','worker fit on saved recording','fixed reference layout','explicit missing boundaries','assumption visibility','ceiling and cutaway','free flight','rapid mode changes','older-build fallback','layout download','no browser errors']},null,2));
+}finally{await browser.close();}

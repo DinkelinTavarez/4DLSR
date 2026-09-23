@@ -1,0 +1,66 @@
+<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Spatial Replay — Multi-camera lab</title></head><body>
+<header><a class="brand" href="/"><span class="brandmark">◈</span><strong>spatial<span>replay</span></strong><span class="prototype">MULTI-CAMERA LAB</span></a><a class="secondary" href="/">Single-camera viewer ↗</a></header>
+<main class="rig-main"><section class="title-row"><div><p class="eyebrow">MORE VIEWS. MEASURED PROGRESS.</p><h1>Capture. Compare. Improve.</h1><p class="rig-intro">Start with your two cameras. Add or remove camera slots as your setup grows.</p></div><div id="rig-state" role="status">No cameras connected</div></section>
+<section class="control-card target-card" aria-label="Reconstruction status"><div><span class="field-label">PHOTOREALISM TARGET</span><strong>Indistinguishable from reality</strong><p>Current verdict: <b class="verdict-fail">TARGET NOT MET</b>. Combined two-view Gaussian reconstruction and sampled 3D replay are available from Saved takes. Camera geometry is estimated; accurate lens calibration, exposure synchronization and novel-view realism remain unverified.</p></div><details><summary>How we grade success</summary><p>Every saved take can be assessed against eight gates. Missing evidence never passes. Gate counts are not a realism percentage, and a good source-camera image does not prove correct geometry from another angle.</p><p>Independent viewpoint references, motion tests and blind viewing trials are required before any claim of photorealism. More Gaussians or cameras alone cannot guarantee it.</p></details></section>
+<div id="simulated-banner" hidden>SIMULATED CAMERAS · software recording test only · no real camera footage</div>
+<section class="rig-toolbar control-card"><div><label for="rig-profile" class="field-label">APPLY QUALITY TO ALL</label><select id="rig-profile"><option value="compatibility">640 × 480 · 15 FPS · compatibility test</option><option value="720-15">720p · 15 FPS · reduced bandwidth</option><option value="720">720p · 30 FPS</option><option value="720-60">720p · 60 FPS · target</option><option value="1080" selected>1080p · 30 FPS · full HD</option><option value="1080-60">1080p · 60 FPS · supported cameras</option><option value="4k">4K · 30 FPS · high bandwidth</option></select></div><button id="apply-profile" class="secondary">Apply to all</button><button id="scan-cameras" class="secondary">Find cameras</button><button id="add-camera" class="secondary">+ Add camera</button><button id="connect-rig" class="secondary">Connect selected cameras</button><button id="disconnect-rig" class="quiet" disabled>Disconnect all</button><button id="record-rig" class="record-button" disabled>Record connected cameras</button></section>
+<label class="capture-quality-rule"><input id="require-capture-quality" type="checkbox" checked>Require requested resolution and FPS before recording</label><p id="device-status" class="rig-message">Choose Find cameras to allow access and list connected video devices. Microphones remain off.</p>
+<p class="rig-message"><label for="capture-path">Camera connection </label><select id="capture-path"><option value="local" selected>Local capture service · embedded app compatible</option><option value="direct">Direct browser capture</option></select> Live video stays on this PC. Nothing is recorded until you press Record. Local capture adds video compression and transport delay; frame timing measures arrival, not synchronized exposure.</p>
+<section id="camera-grid" class="camera-grid" aria-label="Camera views"></section>
+<section class="rig-bottom"><div class="control-card"><h2>Repeatable two-camera test</h2><p id="ready-count">0 / 2 camera slots connected</p><p>Keep both cameras fixed with overlapping views. Keep your head, feet and movement area visible in both. Preview stays live; only Record saves a take.</p><ol class="test-steps"><li>Record 10–20 seconds and show a visible sync cue.</li><li>Stand still, walk slowly, turn, then stop. Show another cue.</li><li>Stop & save, review both angles, then choose Assess take.</li></ol><p><strong>Software timing only.</strong> These cameras do not share a hardware exposure trigger. Marking a cue records a note; it does not synchronize the cameras.</p><button id="sync-cue" class="secondary" disabled>Mark a visible sync cue</button><p id="cue-count">0 cues marked</p><p class="rig-warning">Add/remove is available outside recording. Removing a slot releases that camera; saved takes stay available. Hardware bandwidth and encoding capacity limit how many streams can run well.</p></div>
+<div class="control-card"><h2>Saved takes</h2><div id="rig-save-status" role="status">Original videos are saved continuously to your local recording folder.</div><div id="takes-list"></div><p id="rig-save-path" class="rig-path"></p></div></section>
+<section id="review" class="control-card" hidden><div class="review-heading"><h2 id="review-title">Review camera angles</h2><div><button id="review-play" class="secondary">Play all angles</button> <button id="assess-take" class="secondary" disabled>Assess take</button></div></div><label for="review-time">Shared playback time</label><input id="review-time" type="range" min="0" max="1" step="0.01" value="0"><p id="review-status">Approximate alignment from start requests; use the visual cues to assess offsets.</p><div id="review-grid" class="camera-grid"></div><section id="quality-report" hidden aria-live="polite"></section></section>
+<section id="reconstruction" class="control-card" hidden>
+ <h2 id="reconstruction-title">Combined reconstruction</h2>
+ <p>Build one shared scene from all selected saved angles. Quick, detailed and maximum levels perform progressively more training; more time does not guarantee accurate hidden surfaces.</p>
+ <fieldset class="camera-selection"><legend>Training views · all selected by default</legend><div id="reconstruction-views"></div></fieldset><p id="reconstruction-budget"></p><div class="reconstruction-options">
+  <label hidden>First angle<select id="reconstruction-a"></select></label><label hidden>Second angle<select id="reconstruction-b"></select></label>
+  <label>Geometry method<select id="reconstruction-method"><option value="multiview">Multi-view AI + Gaussian training</option><option value="stereo">Strict stereo + Gaussian training</option></select></label>
+  <label>Render level<select id="reconstruction-profile"><option value="quick">Quick · 640px · 100 steps / 2 views · 1 sample/s</option><option value="detailed">Detailed · 960px · 400 steps / 2 views · 2 samples/s</option><option value="maximum">Maximum · 1280px · 1,000 steps / 2 views · 4 samples/s</option></select></label>
+  <label>Build<select id="reconstruction-mode"><option value="sequence">Whole take · playable 3D replay</option><option value="moment">Single still frame · no playback</option></select></label>
+  <label>Moment in seconds<input id="reconstruction-time" type="number" min="0" step="0.1" value="10"></label>
+  <label hidden>Second camera delay (ms)<input id="reconstruction-offset" type="number" min="-5000" max="5000" step="10" value="0"></label>
+  <label>Stereo horizontal FOV (degrees)<input id="reconstruction-fov" type="number" min="40" max="110" value="70"></label>
+ </div>
+ <label class="surface-option"><input id="reconstruction-surfaces" type="checkbox" checked> Surface-guided Gaussians · experimental</label>
+ <label class="surface-option"><input id="reconstruction-optimize" type="checkbox" checked> Improved coverage & detail · occlusion-aware geometry, structural loss, position refinement</label>
+ <p class="surface-note">Keeps surfaces visible to one camera when blocked from another. Adds SSIM-based detail training and reduces position updates over time. Disable for a legacy comparison. Each completed build is exported into this take’s experiment folder and scored against the original videos.</p>
+ <p class="surface-note">Estimate local surface directions, keep supported Gaussians thin, and limit drift away from those surfaces. This can reduce thick blobs, but inferred depth can still be wrong. It does not create missing walls or a collision map.</p>
+ <p>Multi-view AI estimates camera poses and geometry jointly from all selected images. These are inferred measurements. Timing is approximate; a positive correction places that camera recording later on the shared timeline. Start with one moment before processing the full take.</p>
+ <button id="reconstruction-start">Build combined 3D</button> <button id="reconstruction-cancel" class="quiet" disabled>Cancel build</button>
+ <progress id="reconstruction-progress" value="0" max="1"></progress><p id="reconstruction-status" role="status">Ready to reconstruct a saved take. Original videos are preserved.</p>
+ <div id="reconstruction-jobs"></div>
+ <section id="combined-result" hidden>
+  <h2>Scene explorer</h2><p id="combined-evidence"></p>
+  <section id="reconstruction-score" aria-live="polite"></section>
+  <div id="combined-stage">
+   <div class="scene-modes" role="group" aria-label="Scene mode">
+    <button id="combined-mode-gaussians" aria-pressed="true">Full GSP<span>Trained Gaussian replay</span></button>
+    <button id="combined-mode-model" aria-pressed="false">3D Model<span>Geometry before splatting</span></button>
+    <button id="combined-mode-scape" aria-pressed="false">Scape<span>Simple planes in 3D</span></button>
+   </div>
+   <div class="geometry-bar">
+    <label id="combined-model-options" hidden>Model detail <select id="combined-representation"><option value="surface">Solid mesh</option><option value="wireframe">Wireframe</option><option value="seeds">Seed points</option></select></label>
+    <div id="combined-scape-options" hidden><label><input id="combined-scape-assumptions" type="checkbox" checked> Complete missing boundaries</label><label><input id="combined-scape-ceiling" type="checkbox"> Ceiling</label><label><input id="combined-scape-cutaway" type="checkbox" checked> Cutaway</label><a id="combined-scape-download" download="scape-layout.json" hidden>Download layout (.json)</a></div>
+    <button id="combined-frame-model" disabled>Frame whole model</button>
+    <a id="combined-mesh-download" hidden download>Download mesh (.glb)</a><a id="combined-seeds-download" hidden download>Seed points (.ply)</a><a id="combined-blender-download" hidden download="pretraining.blend">Blender model (.blend)</a>
+   </div><p id="combined-geometry-status"></p>
+   <canvas id="combined-canvas" aria-label="Fly through the reconstructed scene"></canvas>
+   <div class="combined-playback">
+    <div class="combined-controls"><button id="combined-play">Play 3D replay</button><button id="combined-restart">Restart</button><button id="combined-source">Play original videos</button><button id="combined-camera-a">Camera 1 view</button><button id="combined-camera-b">Camera 2 view</button><span id="combined-extra-cameras"></span><span id="combined-frame"></span></div>
+    <label for="combined-time">3D replay timeline</label><input id="combined-time" type="range" min="0" max="0" step="1" value="0">
+    <p id="combined-playback-status" role="status"></p><button id="combined-build-replay" hidden>Set up full 3D replay</button>
+   </div>
+   <div class="navigation-bar">
+    <label>Navigation <select id="combined-navigation"><option value="fly">Fly freely</option><option value="orbit">Orbit and inspect</option></select></label>
+    <label class="speed-control">Speed <input id="combined-speed" type="range" min="-2" max="3" step="0.25" value="0"><output id="combined-speed-value">1×</output></label>
+    <button id="combined-mouse">Capture mouse</button><button id="combined-fullscreen" aria-pressed="false">Expand viewer</button><button id="combined-show-score">Score / compare</button>
+   </div>
+   <p id="combined-navigation-status" role="status">Click scene, then fly · drag to look</p>
+   <p class="navigation-help"><kbd>W A S D</kbd> move · <kbd>E / Space</kbd> up · <kbd>Q / Ctrl</kbd> down · <kbd>Shift</kbd> 4× faster · <kbd>Alt</kbd> precision · <kbd>X</kbd> stop · <kbd>Esc</kbd> release mouse. Drag to look, or capture the mouse for continuous looking.</p>
+  </div>
+  <p>Click a camera view to return home. Free flight has no collision barriers; dark areas indicate missing coverage. This is a shared 3D scene, with independent reconstructed time samples when building a replay.</p>
+  <p id="combined-limitations"></p><a id="combined-download" download="combined.splat">Download first Gaussian frame</a> · <a id="combined-manifest" target="_blank">Reconstruction measurements</a>
+ </section>
+</section>
+</main><div id="toast" role="status" hidden></div><script type="module" src="/src/rig.js"></script></body></html>

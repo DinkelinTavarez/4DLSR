@@ -1,0 +1,41 @@
+import {chromium} from '@playwright/test';
+import assert from 'node:assert/strict';
+import {zstdDecompressSync} from 'node:zlib';
+
+const base='http://127.0.0.1:8794',job=process.argv[2]||'829bdc8f-01bc-4b45-bdc2-53e5d5bfea4e';
+const info=await(await fetch(`${base}/api/reconstructions/${job}`)).json();assert.equal(info.state,'complete');
+const manifest=await(await fetch(`${base}/api/reconstructions/${job}/manifest.json`)).json();
+assert.ok(manifest.frames.every(f=>f.geometry?.meshFile&&f.geometry.stage==='before Gaussian optimization'));
+const blender=await(await fetch(`${base}/api/reconstructions/${job}/blender-geometry.json`)).json();assert.equal(blender.seedPoints,manifest.frames[0].gaussians);assert.equal(blender.triangles,manifest.frames[0].geometry.mesh.triangles);
+const blend=await fetch(`${base}/api/reconstructions/${job}/pretraining.blend`);assert.equal(blend.status,200);const native=Buffer.from(await blend.arrayBuffer()),decoded=native.readUInt32LE(0)===0xfd2fb528?zstdDecompressSync(native):native;assert.equal(decoded.subarray(0,7).toString(),'BLENDER');
+const browser=await chromium.launch({executablePath:'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',headless:true});
+try{
+ const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.addInitScript(()=>localStorage.setItem('spatial-auto-connect','false'));await page.goto(base+'/rig.html');await page.locator('[data-lab-tab="library"]').click();
+ await page.locator('#takes-list .take-row').filter({has:page.locator(`a[href="/api/rigs/${info.rigId}/manifest"]`)}).getByRole('button',{name:'Reconstruct combined 3D',exact:true}).click();
+ await page.locator(`[data-job-id="${job}"]`).getByRole('button',{name:'Open combined 3D',exact:true}).click();
+ await page.waitForFunction(()=>document.getElementById('combined-frame').textContent.includes('Gaussians'));
+ const gaussian=await page.locator('#combined-canvas').screenshot();
+ await page.locator('#combined-mode-model').click();await page.waitForFunction(()=>document.getElementById('combined-geometry-status').textContent.includes('triangles'));
+ assert.equal(await page.locator('#combined-frame-model').isEnabled(),true);
+ const solid=await page.locator('#combined-canvas').screenshot();assert.notDeepEqual(solid,gaussian);
+ await page.locator('#combined-canvas').screenshot({path:'artifacts/pretraining-solid.png'});
+ await page.getByRole('button',{name:'Frame whole model',exact:true}).click();await page.waitForTimeout(150);
+ const framed=await page.locator('#combined-canvas').screenshot();assert.notDeepEqual(framed,solid);
+ await page.locator('#combined-representation').selectOption('wireframe');await page.waitForTimeout(250);
+ const wire=await page.locator('#combined-canvas').screenshot();assert.notDeepEqual(wire,framed);
+ await page.locator('#combined-canvas').screenshot({path:'artifacts/pretraining-wireframe.png'});
+ await page.locator('#combined-representation').selectOption('seeds');await page.waitForFunction(()=>document.getElementById('combined-geometry-status').textContent.includes('exact initialization points'));
+ const points=await page.locator('#combined-canvas').screenshot();assert.notDeepEqual(points,wire);
+ await page.locator('#combined-representation').selectOption('surface');await page.getByRole('button',{name:'Camera 1 view',exact:true}).click();
+ await page.getByRole('button',{name:'Expand viewer',exact:true}).click();assert.equal(await page.locator('#combined-stage.expanded #combined-representation').isVisible(),true);
+ await page.getByRole('button',{name:'Play 3D replay',exact:true}).click();await page.waitForFunction(()=>Number(document.getElementById('combined-time').value)>=2);await page.getByRole('button',{name:'Pause 3D replay',exact:true}).click();
+ await page.locator('#combined-time').evaluate(el=>{el.value='20';el.dispatchEvent(new Event('input',{bubbles:true}));});
+ await page.waitForFunction(()=>document.getElementById('combined-frame').textContent.startsWith('10.15'));
+ assert.match(await page.locator('#combined-mesh-download').getAttribute('href'),/mesh-00020.glb$/);assert.match(await page.locator('#combined-seeds-download').getAttribute('href'),/seeds-00020.ply$/);
+ assert.match(await page.locator('#combined-blender-download').textContent(),/0.15 s/);
+ await page.locator('#combined-mode-gaussians').click();await page.waitForFunction(()=>document.getElementById('combined-frame').textContent.includes('Gaussians'));
+ assert.equal(await page.locator('#combined-time').inputValue(),'20');assert.equal(await page.locator('#combined-frame-model').isDisabled(),true);
+ assert.deepEqual(errors,[]);
+ console.log(JSON.stringify({job,geometryFrames:manifest.frames.length,firstMesh:manifest.frames[0].geometry.mesh,blender,passed:['native Blender document','GLB and exact seed exports','solid mesh','wireframe','points','frame whole model','mesh playback','seek updates downloads','switch back to Gaussians at the same time','no browser errors']},null,2));
+}finally{await browser.close();}

@@ -1,0 +1,22 @@
+{
+  "name": "spatial-replay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "build:hosted": "vite build --mode hosted",
+    "start": "node server.mjs",
+    "test": "node --test tests/server.test.mjs tests/quality.test.mjs tests/navigation.test.mjs tests/scape.test.mjs tests/library.test.mjs tests/rig-geometry.test.mjs tests/camera-inventory.test.mjs tests/capture-policy.test.mjs tests/mixed-capture.test.mjs tests/hosted-workspace.test.mjs",
+    "test:rig": "node tests/rig-e2e.mjs"
+  },
+  "dependencies": {
+    "three": "0.180.0",
+    "@huggingface/transformers": "3.8.1"
+  },
+  "devDependencies": {
+    "vite": "7.1.7",
+    "@playwright/test": "1.55.1",
+    "agent-browser": "0.21.0"
+  }
+}

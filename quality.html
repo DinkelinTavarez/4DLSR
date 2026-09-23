@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Spatial Replay — Fidelity comparison</title>
+<style>
+body{background:#101b16;color:#d8ebdf;font:14px Segoe UI,sans-serif;margin:24px}h1{font-size:24px;font-weight:400;margin:0 0 8px}p{color:#9cb7a8;margin:0 0 16px;max-width:1000px}section{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;max-width:1328px}article{background:#1b2a21;padding:10px;border-radius:8px;min-width:0}canvas{width:100%;aspect-ratio:16/9;display:block}h2{font-size:14px;font-weight:500;margin:0 0 8px}#result{white-space:pre-wrap;background:#253d2d;padding:18px;margin:20px 0;max-width:1290px}video{display:none}@media(max-width:720px){section{grid-template-columns:1fr}}
+</style></head><body>
+<a href="/rig.html" style="color:#bee3cb">← Multi-camera lab</a><h1>Source-view fidelity diagnostic</h1>
+<p>Up to eight prepared frames, measured at 640 × 360. The canvases show the last sample. Both renderers use identical depth data. These RGB values come from the reference video itself, so even a perfect match cannot prove correct 3D geometry. The 45° view has no independent reference.</p>
+<p id="grade">Checking source-view errors…</p><a id="download" hidden style="color:#bee3cb">Download measurements</a>
+<section>
+<article><h2>Original video</h2><canvas id="reference" width="640" height="360"></canvas></article>
+<article><h2>Previous · 36,864 single-color Gaussians</h2><canvas id="before" width="640" height="360"></canvas></article>
+<article><h2>Updated · 82,944 textured Gaussians</h2><canvas id="after" width="640" height="360"></canvas></article>
+<article><h2>Updated · 45° view · incomplete single-camera geometry</h2><canvas id="side" width="640" height="360"></canvas></article>
+</section><pre id="result">Loading the recorded frame…</pre><video id="video" muted playsinline></video><script type="module" src="/src/quality-check.js"></script></body></html>
