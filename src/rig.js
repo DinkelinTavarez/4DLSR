@@ -4,6 +4,7 @@ import './lab.css';
 import './rig-setup.css';
 import './session-workspace.css';
 import {browserNotebook,mountHostedWorkspace} from './hosted-workspace.js';
+import {desktopRemoteAgent} from './desktop-remote-agent.js';
 import {sessionWorkspace,compactCamera} from './session-workspace.js';
 import {mountLab,labUI,showLabTab} from './lab-ui.js';
 import {liveSceneUI} from './live-scene-ui.js';
@@ -223,4 +224,23 @@ $('capture-path').onchange=()=>{if(slots.some(c=>c.stream)){toast('Disconnect ca
 setInterval(()=>{const now=performance.now();for(const c of slots){if(!c.stream)continue;settingText(c);const mediaTime=c.video.currentTime;if(mediaTime>c.lastMediaTime+.001){c.lastMediaTime=mediaTime;c.lastAdvanceAt=now;}else if(now-(c.lastAdvanceAt||now)>captureStallMs(c.requested?.frameRate)&&!c.connecting){c.tile.classList.add('camera-frozen');$(`fps-${c.slot}`).textContent='Feed stalled';handleFailure(c,'No new video frames within the expected interval');}}const alive=slots.filter(c=>c.stream&&now-(c.lastAdvanceAt||0)<captureStallMs(c.requested?.frameRate));lab.cameraStatus(alive.length,devices.length,alive.reduce((n,c)=>n+c.observedFPS,0)/(alive.length||1));},750);
 setInterval(()=>autoRefresh().catch(report),1000);
 async function boot(){let layout;try{layout=JSON.parse(localStorage.getItem(layoutKey));}catch{}if(Array.isArray(layout)&&layout.every(c=>c&&Number.isSafeInteger(c.slot)&&c.slot>=0&&typeof c.deviceId==='string')&&new Set(layout.map(c=>c.slot)).size===layout.length){for(const c of layout)addSlot(c);}else{addSlot(hosted?{captureMode:'camera-default'}:{});if(!hosted)addSlot();}config=await api('/api/config');if(hosted)mountHostedWorkspace(api,report);$('rig-save-path').textContent=config.recordingsDir;$('simulated-banner').hidden=!simulated;await releasePreviousCameras(post);await lab.refresh();await scan(false);await listTakes();updateControls();requestAnimationFrame(tick);if(!hosted&&!simulated&&devices.length&&$('auto-connect').checked)await connect();}
-boot().catch(report);
+boot().then(()=>{
+ if(hosted||simulated)return;
+ desktopRemoteAgent({post,cameras:()=>slots,report,start,stop,
+  getState:()=>({recording:!!take,saving:stopping,processing:reconstruction.busy(),rigId:take?.id||null,message:$('reconstruction-status').textContent}),
+  prepare:async command=>{
+   if(take||stopping||connecting||reconstruction.busy())throw new Error('Desktop is busy. Wait for the current operation.');
+   await liveScene.stop();await lab.refresh();
+   $('session-experiment').value=command.context.experimentId;
+   $('session-change').value=command.context.whatChanged;
+   $('session-procedure').value=command.context.procedure||command.context.whatChanged;
+   $('session-label').value=String(command.context.label||'Phone experiment').slice(0,120);
+   $('session-conditions').value=String(command.context.conditions||'').slice(0,4000);
+   $('session-quality').value=command.profile;
+   $('session-splat-mode').value=command.maxGaussians?'custom':'all';$('session-splat-limit').value=String(command.maxGaussians);
+   $('require-capture-quality').checked=command.requireQuality;
+   if(!lab.ready())throw new Error('Choose an active experiment and add session context.');
+   updateControls();
+  }
+ });
+}).catch(report);

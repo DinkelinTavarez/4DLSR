@@ -3,7 +3,7 @@
   "framework": "vite",
   "buildCommand": "npm run build:hosted",
   "outputDirectory": "dist-hosted",
-  "rewrites": [{"source": "/", "destination": "/rig.html"}],
+  "rewrites": [{"source": "/", "destination": "/remote.html"}],
   "redirects": [
     {"source": "/index.html", "destination": "/", "permanent": false},
     {"source": "/quality.html", "destination": "/", "permanent": false}

@@ -12,6 +12,7 @@ import {reconstructionRoutes} from './reconstruction-store.mjs';
 import {experimentLibrary} from './experiment-library.mjs';
 import {labStore} from './lab-store.mjs';
 import {liveSceneRoutes} from './live-scene.mjs';
+import {remoteControl} from './remote-control.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8794);
@@ -98,6 +99,7 @@ const handleCameraBridge=cameraBridge({port:PORT,body,json,fail});
 let handleLiveScene;
 const handleReconstruction=reconstructionRoutes({root:ROOT,store:STORE,body,json,fail,fileResponse,library,isPreviewBusy:()=>handleLiveScene?.busy()});
 handleLiveScene=liveSceneRoutes({root:ROOT,body,json,fail,isGpuBusy:()=>handleReconstruction.busy()});
+const handleRemote=remoteControl({body,json,fail});
 const server=http.createServer(async(req,res)=>{
   res.setHeader('Cross-Origin-Opener-Policy','same-origin');
   res.setHeader('Cross-Origin-Embedder-Policy','require-corp');
@@ -111,6 +113,7 @@ const server=http.createServer(async(req,res)=>{
     const url=new URL(req.url,'http://127.0.0.1'),p=url.pathname;
     if(req.method==='POST' && req.headers['x-spatial-token']!==token)throw fail(403,'Invalid session token');
     if(p==='/api/config')return json(res,{token,recordingsDir:STORE,ffmpeg:!!ffmpeg});
+    if(await handleRemote(req,res,url))return;
     if(await handleCameraBridge(req,res,url))return;
     if(await handleLiveScene(req,res,url))return;
     if(await lab.routes(req,res,url))return;
