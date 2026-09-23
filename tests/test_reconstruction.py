@@ -41,6 +41,8 @@ class ReconstructionTests(unittest.TestCase):
         np.testing.assert_array_equal(camera_views({'views':views.tolist()}),views)
         spec={'cameras':[{'startRequestedMs':x} for x in [10,20,30,40]],'offsetsMs':[0,5,-5,10]}
         np.testing.assert_allclose(camera_offsets(spec),[0,.015,.015,.04])
+        recorder_spec={'cameras':[{'startRequestedMs':0,'recorderStartedMs':x} for x in [100,150,125,200]],'offsetsMs':[0,0,0,0]}
+        np.testing.assert_allclose(camera_offsets(recorder_spec),[0,.05,.025,.1])
         budget=profile_for_views(PROFILES['detailed'],4)
         self.assertEqual(budget['iterations']//4,PROFILES['detailed']['iterations']//2)
         self.assertIsNone(budget['max_points'])

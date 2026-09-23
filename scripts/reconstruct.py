@@ -38,6 +38,16 @@ def read_frame(filename, seconds, width):
     return cv2.resize(frame, (width, round(frame.shape[0] * width / frame.shape[1])))
 
 
+def media_duration(filename, declared):
+    """Use the decodable file duration; browser stop timing can be longer."""
+    try:
+        result=subprocess.run(['ffprobe','-v','error','-show_entries','format=duration','-of','default=nw=1:nk=1',str(filename)],capture_output=True,text=True,timeout=15,check=True)
+        measured=float(result.stdout.strip())
+        if math.isfinite(measured) and measured>0:return min(float(declared),measured)
+    except (OSError,ValueError,subprocess.SubprocessError):pass
+    return float(declared)
+
+
 def intrinsics(width, height, hfov):
     focal = width / (2 * math.tan(math.radians(hfov) / 2))
     return np.array([[focal, 0, width/2], [0, focal, height/2], [0, 0, 1.]], np.float64)
@@ -245,7 +255,8 @@ def run(spec, output):
     if spec.get('method')=='stereo' and len(files)!=2:raise ValueError('Strict stereo requires two views; use multi-view for larger rigs.')
     profile=profile_for_views(PROFILES[spec['profile']],len(files))
     offsets=camera_offsets(spec)
-    duration=min(c['duration']+o for c,o in zip(spec['cameras'],offsets));start=max(max(offsets),.15)
+    durations=[media_duration(f,c['duration']) for f,c in zip(files,spec['cameras'])]
+    duration=min(d+o for d,o in zip(durations,offsets));start=max(max(offsets),.15);end=duration-.25
     if duration-start<1:raise ValueError('Not enough overlapping video.')
     def frames(sec):
         images=[read_frame(f,sec-o,profile['width']) for f,o in zip(files,offsets)]
@@ -253,7 +264,7 @@ def run(spec, output):
         return [crop_height(im,height) for im in images]
     def status(stage,percent,**extra):write_json(output/'status.json',dict(state='running',stage=stage,progress=percent,elapsedSeconds=time.time()-started,**extra))
     status('Estimating shared camera geometry',.02)
-    samples=[frames(float(v)) for v in np.linspace(start,min(duration-.2,12),7)]
+    samples=[frames(float(v)) for v in np.linspace(start,min(end,12),7)]
     backgrounds=[np.median(np.stack([s[c] for s in samples]),axis=0).astype(np.uint8) for c in range(len(files))]
     geometry=None;method=spec.get('method','stereo')
     if method=='multiview':
@@ -263,8 +274,8 @@ def run(spec, output):
     else:K,R,t,calibration=calibrate(backgrounds,spec.get('hfov',70))
     write_json(output/'calibration.json',calibration)
     for camera,image in enumerate(backgrounds):cv2.imwrite(str(output/f'camera-{camera}.jpg'),image)
-    if spec.get('mode','moment')=='sequence':times=np.arange(start,duration-.15,1/profile['fps']).tolist()
-    else:times=[max(start,min(spec.get('time',start),duration-.2))]
+    if spec.get('mode','moment')=='sequence':times=np.arange(start,end,1/profile['fps']).tolist()
+    else:times=[max(start,min(spec.get('time',start),end))]
     manifest=dict(version=2,cameraCount=len(files),cameraSlots=[c['slot'] for c in spec['cameras']],kind='jointly-trained-multi-view-gaussian-sequence',method=method,profile=spec['profile'],mode=spec.get('mode','moment'),
                   training=dict(iterationsPerFrame=profile['iterations'],gaussianLimit=spec.get('maxGaussians') or None,pointPolicy='all-valid-unique-geometry' if geometry else 'all-consistent-stereo-pixels',geometryInferenceWidth=518 if geometry else None,temporalRegularization=False,surfaceGuidance=spec.get('surfaceGuidance',False),optimizations='visibility-ssim-v1' if spec.get('optimizations',False) else 'legacy'),
                   width=backgrounds[0].shape[1],height=backgrounds[0].shape[0],calibration=calibration,frames=[],

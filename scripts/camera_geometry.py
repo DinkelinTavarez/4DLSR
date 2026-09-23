@@ -12,7 +12,9 @@ def camera_views(calibration):
     return np.stack([np.eye(4,dtype=np.float32),pose])
 
 def camera_offsets(spec):
-    starts=[c.get('startRequestedMs',0)/1000 for c in spec['cameras']]
+    # File time zero is the recorder start, which can lag the request differently
+    # on each USB camera. Older captures lack that measurement and fall back.
+    starts=[c.get('recorderStartedMs',c.get('startRequestedMs',0))/1000 for c in spec['cameras']]
     offsets=np.asarray(starts)-min(starts)
     corrections=spec.get('offsetsMs')
     if corrections is not None:

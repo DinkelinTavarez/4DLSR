@@ -48,7 +48,7 @@ export function reconstructionRoutes({root,store,body,json,fail,fileResponse,lib
     const session=JSON.parse(await f.readFile(path.join(store,camera.sessionId,'session.json'),'utf8'));
     if(session.status!=='saved'||session.duration<1)throw fail(409,'All selected camera videos must be saved with at least one second of footage');
     if(input.mode==='sequence'&&session.duration>120)throw fail(400,'Sequence reconstruction currently supports takes up to 120 seconds. Use a single moment for longer takes.');
-    cameras.push({slot,sessionId:camera.sessionId,file:path.join(store,camera.sessionId,'recording.webm'),duration:session.duration,startRequestedMs:camera.startRequestedMs||0,requested:camera.requested});
+    cameras.push({slot,sessionId:camera.sessionId,file:path.join(store,camera.sessionId,'recording.webm'),duration:session.duration,startRequestedMs:camera.startRequestedMs||0,recorderStartedMs:camera.recorderStartedMs,requested:camera.requested});
    }
    const id=randomUUID(),dir=path.join(base,id),spec={...input,id,created:new Date().toISOString(),cameras};
    await f.mkdir(dir,{recursive:true});await f.writeFile(path.join(dir,'spec.json'),JSON.stringify(spec));
