@@ -27,7 +27,7 @@ export function desktopRemoteAgent({post,cameras,getState,start,stop,prepare,rep
       const sent=ack,result=await post('/api/remote/agent',{agentId:id,state:{...s,cameras:views},ack:sent,acceptCommands:!busy});if(ack===sent)ack=null;
       badge.textContent='Phone control ready · keep PC awake';
       if(result.command&&!busy)execute(result.command);
-    }catch(error){badge.textContent='Phone control unavailable';if(/Another desktop/.test(error.message))stopped=true;}
+    }catch(error){badge.textContent='Phone control unavailable · retrying…';}
     if(!stopped)setTimeout(tick,1500);
   }
   tick();
