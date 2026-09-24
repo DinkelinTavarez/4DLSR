@@ -7,7 +7,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from reconstruct import triangulate, export_splat, PROFILES
+from reconstruct import triangulate, export_splat, PROFILES, write_json
+from unittest.mock import patch
 from surface_guides import estimate_surface_guides
 from scipy.spatial.transform import Rotation
 from geometry_export import depth_grid_mesh, export_depth_glb, export_seed_ply
@@ -18,6 +19,20 @@ from splat_budget import apply_splat_budget
 
 
 class ReconstructionTests(unittest.TestCase):
+    def test_status_write_retries_transient_windows_reader_lock(self):
+        with tempfile.TemporaryDirectory() as temp:
+            destination=Path(temp)/'status.json'
+            original=Path.replace
+            attempts=[]
+            def locked_once(source,target):
+                attempts.append(target)
+                if len(attempts)==1:raise PermissionError('reader holds destination')
+                return original(source,target)
+            with patch.object(Path,'replace',locked_once),patch('reconstruct.time.sleep'):
+                write_json(destination,{'state':'complete'})
+            self.assertEqual(json.loads(destination.read_text()),{'state':'complete'})
+            self.assertEqual(len(attempts),2)
+
     def test_explicit_budget_preserves_all_camera_layers_and_attribute_alignment(self):
         # Four camera layers, each with a distinct color and radius.
         points=np.arange(1200,dtype=np.float32).reshape(400,3)
@@ -130,7 +145,8 @@ class ReconstructionTests(unittest.TestCase):
         # bypassing only model loading. Four shifted views of one planar surface.
         from multiview_geometry import MultiViewGeometry
         geometry=MultiViewGeometry.__new__(MultiViewGeometry)
-        h,w=360,640
+        geometry.stable_reference=None
+        h,w=480,800
         images=[np.full((h,w,3),100,dtype=np.uint8) for _ in range(4)]
         depth=np.full((4,h,w),3.,dtype=np.float32)
         confidence=np.tile(np.linspace(1,2,w,dtype=np.float32),(4,h,1))

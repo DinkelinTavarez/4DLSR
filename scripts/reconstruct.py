@@ -27,7 +27,14 @@ PROFILES = {
 def write_json(file, value):
     temp = file.with_suffix('.tmp')
     temp.write_text(json.dumps(value, indent=2, allow_nan=False), encoding='utf8')
-    temp.replace(file)
+    for attempt in range(8):
+        try:
+            temp.replace(file)
+            break
+        except PermissionError:
+            # Windows readers may briefly hold the polled status file open.
+            if attempt == 7:raise
+            time.sleep(.025*(attempt+1))
 
 
 def read_frame(filename, seconds, width):
@@ -167,7 +174,7 @@ def dense_stereo(images, K, R, t):
     return points,colors,radii,dict(consistentPixels=accepted,imagePixels=w*h,stereoCoverage=accepted/(w*h),initialGaussians=len(points)),(ar,br)
 
 
-def train(points, colors, radii, images, K, R, t, iterations, progress, surface_guidance=False, optimizations=False, camera_matrices=None):
+def train(points, colors, radii, images, K, R, t, iterations, progress, surface_guidance=False, optimizations=False, camera_matrices=None, lock_geometry=False):
     import torch
     from gsplat import rasterization
     if optimizations:from kornia.losses import ssim_loss
@@ -223,6 +230,10 @@ def train(points, colors, radii, images, K, R, t, iterations, progress, surface_
                 thickness=torch.maximum(radius*.04,torch.minimum(tangent_size.min(dim=1,keepdim=True).values*.12,size[:,2:]))
                 size=torch.cat([tangent_size,thickness],dim=1)
                 scales[mask]=size[mask].log()
+            if lock_geometry:
+                # Appearance fitting cannot drag confirmed surface seeds into
+                # empty space. Spatial motion comes from observed frame depth.
+                means.copy_(seeds)
         if loss_start is None:loss_start=float(photometric.detach())
         if step%25==0:progress(step/iterations)
     metrics=[]
@@ -266,11 +277,12 @@ def run(spec, output):
     status('Estimating shared camera geometry',.02)
     samples=[frames(float(v)) for v in np.linspace(start,min(end,12),7)]
     backgrounds=[np.median(np.stack([s[c] for s in samples]),axis=0).astype(np.uint8) for c in range(len(files))]
+    stable_reference=[np.max(np.abs(np.stack([s[c] for s in samples]).astype(np.float32)-backgrounds[c]),axis=(0,3))<12 for c in range(len(files))]
     geometry=None;method=spec.get('method','stereo')
     if method=='multiview':
         from multiview_geometry import MultiViewGeometry
         status('Estimating joint multi-view geometry on GPU',.03)
-        geometry=MultiViewGeometry(backgrounds,occlusion_aware=spec.get('optimizations',False));K,R,t,calibration=geometry.K,geometry.R,geometry.t,geometry.calibration
+        geometry=MultiViewGeometry(backgrounds,occlusion_aware=True,stable_reference=stable_reference,strict_geometry=spec.get('strictGeometry',False));K,R,t,calibration=geometry.K,geometry.R,geometry.t,geometry.calibration
     else:K,R,t,calibration=calibrate(backgrounds,spec.get('hfov',70))
     write_json(output/'calibration.json',calibration)
     for camera,image in enumerate(backgrounds):cv2.imwrite(str(output/f'camera-{camera}.jpg'),image)
@@ -283,6 +295,10 @@ def run(spec, output):
                                'All selected views contribute; unobserved areas remain unknown. Mirrors, blank surfaces and occlusions can produce errors or holes.',
                                'Independent time samples; no persistent dynamic tracking or temporal regularization.',
                                'Not a validated photorealistic reconstruction.'],metricsPass=False,realismScore=None)
+    manifest['training']['geometryStabilization']='fixed-rig-stationary-depth-anchors-v1' if geometry else None
+    manifest['training']['positionsLockedToSeeds']=bool(geometry and spec.get('lockGeometry',False))
+    manifest['training']['geometryFilter']=('cross-view-confirmed-no-free-space-conflicts-v2' if spec.get('strictGeometry',False) else 'occlusion-aware-v1') if geometry else 'stereo-consistency'
+    manifest['limitations'].append('Conservative filtering may leave holes. Stationary depth anchors are appearance/depth heuristics; moving subjects still lack persistent identities or motion tracking.')
     if spec.get('surfaceGuidance',False):manifest['limitations'].append('Local tangent planes constrain supported Gaussians; inferred surfaces and empty space remain unverified. No collision mesh.')
     for index,sec in enumerate(times):
         status(f'{"Inferring shared geometry" if geometry else "Stereo matching"} frame {index+1}/{len(times)}',.05+.9*index/len(times))
@@ -301,7 +317,7 @@ def run(spec, output):
         mesh_report=export_depth_glb(output/mesh_file,geometry.surface_meshes) if geometry else None
         inspection=dict(stage='before Gaussian optimization',seedFile=point_file,seedPoints=len(points),meshFile=mesh_file if mesh_report else None,mesh=mesh_report,
                         note='Depth-grid surface proxy; camera layers can overlap. Not watertight, not verified free space. Seed points are the exact initial Gaussian positions.')
-        values,quality=train(points,colors,radii,images,K,R,t,profile['iterations'],lambda fraction:status(f'Training frame {index+1}/{len(times)}',.05+.9*(index+fraction)/len(times)),surface_guidance=spec.get('surfaceGuidance',False),optimizations=spec.get('optimizations',False),camera_matrices=geometry.views if geometry else None)
+        values,quality=train(points,colors,radii,images,K,R,t,profile['iterations'],lambda fraction:status(f'Training frame {index+1}/{len(times)}',.05+.9*(index+fraction)/len(times)),surface_guidance=spec.get('surfaceGuidance',False),optimizations=spec.get('optimizations',False),camera_matrices=geometry.views if geometry else None,lock_geometry=bool(geometry and spec.get('lockGeometry',False)))
         filename=f'frame-{index:05d}.splat';export_splat(output/filename,values)
         manifest['frames'].append(dict(time=sec,file=filename,gaussians=len(points),stereo=stereo,quality=quality,geometry=inspection))
         write_json(output/'manifest.partial.json',manifest)
