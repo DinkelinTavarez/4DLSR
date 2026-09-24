@@ -16,7 +16,7 @@ export function createRemoteGateway({secret,origins,engine='http://127.0.0.1:879
   const origin=req.headers.origin;
   if(origin&&!accepted.has(origin))return fail(res,403,'Origin denied');
   if(origin){res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin');res.setHeader('Access-Control-Expose-Headers','Content-Length,Content-Range');}
-  if(req.method==='OPTIONS'){res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Authorization,Content-Type,Range');res.writeHead(204);return res.end();}
+  if(req.method==='OPTIONS'){res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Authorization,Content-Type,Range,ngrok-skip-browser-warning');res.writeHead(204);return res.end();}
   const supplied=Buffer.from(String(req.headers.authorization||'').replace(/^Bearer /,''));
   if(supplied.length!==key.length||!timingSafeEqual(supplied,key))return fail(res,401,'Pair your phone with the desktop access key.');
   try{
