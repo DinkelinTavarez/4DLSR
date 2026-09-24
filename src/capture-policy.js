@@ -23,6 +23,9 @@ export function captureRequestMatches(selected,applied){
 }
 
 export function captureStallMs(fps){return Math.max(3500,Number.isFinite(fps)&&fps>0?3000/fps:3500);}
+export function liveCaptureCameras(cameras,now){
+ return cameras.filter(c=>c.stream&&Number.isFinite(c.lastFrame)&&now-c.lastFrame<captureStallMs(c.requested?.frameRate)&&c.stream.getVideoTracks().some(track=>track.readyState==='live'));
+}
 export function deliveryWindowMs(fps){return Math.max(5000,Number.isFinite(fps)&&fps>0?5000/fps:5000);}
 
 export function deliveryGrade(targetFps,measuredFps,windowMs){

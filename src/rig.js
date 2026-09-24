@@ -15,7 +15,7 @@ import {assignCameraDevices} from './camera-inventory.js';
 import {cameraDiagnostics} from './camera-diagnostics.js';
 import {cameraDelivery} from './camera-delivery.js';
 import {cameraFormat} from './camera-format.js';
-import {exactCameraConstraints,captureModeMatches,captureRequestMatches,validCaptureMode,captureBitrate,captureStallMs} from './capture-policy.js';
+import {exactCameraConstraints,captureModeMatches,captureRequestMatches,validCaptureMode,captureBitrate,captureStallMs,liveCaptureCameras} from './capture-policy.js';
 import {reconstructionUI} from './reconstruction-ui.js';
 import {experimentLibraryUI} from './experiment-library-ui.js';
 
@@ -151,8 +151,13 @@ async function drain(c){if(c.upload)return c.upload;c.upload=(async()=>{while(c.
 function failedSave(e){report(e);if(take&&!stopping)stop().catch(report);}
 async function start(){
   recordingOptions=sessionFlow.processingOptions();
-  if(take||connecting)return;const context=lab.captureContext();const active=slots.filter(c=>c.stream&&performance.now()-(c.lastFrame||0)<captureStallMs(c.requested?.frameRate));if(!active.length)throw new Error('Connect cameras first.');
-  if(slots.some(c=>$(`camera-${c.slot}`).value&&!active.includes(c)))throw new Error('An assigned camera is missing or has no recent frames. Reconnect it or unassign its slot before recording.');
+  if(take||connecting)return;const context=lab.captureContext();const active=liveCaptureCameras(slots,performance.now());if(!active.length)throw new Error('No live camera frames are available. Connect at least one camera.');
+  const skipped=slots.filter(c=>$(`camera-${c.slot}`).value&&!active.includes(c));
+  if(skipped.length){
+    const note=`Capture used ${active.length} live cameras. Skipped unavailable slots: ${skipped.map(c=>`${c.label} (ID ${c.slot})`).join(', ')}.`;
+    context.conditions=`${String(context.conditions||'').slice(0,Math.max(0,3999-note.length))}\n${note}`;
+    $('device-status').textContent=note;
+  }
   if(active.some(c=>!captureRequestMatches(requested(c),c.requested)))throw new Error('Apply the changed camera settings before recording.');
   if($('require-capture-quality').checked&&!simulated){
     const failures=[];
@@ -170,7 +175,7 @@ async function start(){
   connecting=true;updateControls();origin=performance.now();markers=[];
   try{take=await post('/api/rigs',{name:context.label||`${simulated?'SIMULATED · ':''}${active.length}-camera session · ${new Date().toLocaleString()}`,context,simulated,clockOriginUnixMs:performance.timeOrigin+origin,cameras:active.map(c=>({slot:c.slot,label:c.label,deviceId:c.deviceId,deviceLabel:c.deviceLabel,width:c.settings.width,height:c.settings.height,frameRate:c.settings.frameRate,requested:c.requested}))});
     for(const c of active){c.sessionId=take.cameras.find(v=>v.slot===c.slot).sessionId;c.seq=0;c.timingSeq=0;c.queue=[];c.samples=[];c.bytes=0;c.observedFrames=0;c.recorderStartedMs=null;c.stopRequestedMs=0;c.recorder.onstart=()=>c.recorderStartedMs=elapsed();c.recorder.ondataavailable=e=>{if(!e.data.size)return;c.queue.push({kind:'video',seq:c.seq++,blob:e.data,time:Math.max(0,((c.stopRequestedMs||elapsed())-c.startRequestedMs)/1000)});drain(c).catch(failedSave);if(c.queue.reduce((n,x)=>n+(x.blob?.size||0),0)>32*1048576)failedSave(new Error('Saving is falling behind. Capture is stopping to preserve pending video.'));};c.recorder.onerror=e=>failedSave(e.error||new Error(`${c.label} recorder failed`));c.startRequestedMs=elapsed();c.recorder.start(1000);}
-    $('cue-count').textContent='0 cues marked';toast(`Recording ${active.length} cameras. Show a visible sync cue now.`);
+    $('cue-count').textContent='0 cues marked';toast(`Recording ${active.length} cameras.${skipped.length?' '+skipped.length+' unavailable camera(s) skipped.':''} Show a visible sync cue now.`);
   }catch(e){if(take)await stop().catch(report);throw e;}finally{connecting=false;updateControls();}
 }
 async function stop(){

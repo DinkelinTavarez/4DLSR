@@ -1,6 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {exactCameraConstraints,captureModeMatches,captureRequestMatches,deliveryGrade,validCaptureMode,captureBitrate,captureStallMs} from '../src/capture-policy.js';
+import {exactCameraConstraints,captureModeMatches,captureRequestMatches,deliveryGrade,validCaptureMode,captureBitrate,captureStallMs,liveCaptureCameras} from '../src/capture-policy.js';
+
+test('recording accepts any live camera count and skips missing, stalled or ended slots',()=>{
+ const camera=(slot,lastFrame=9900,readyState='live')=>({slot,lastFrame,requested:{frameRate:30},stream:{getVideoTracks:()=>[{readyState}]}});
+ for(const count of [1,2,3,4,6,10]){
+  const live=Array.from({length:count},(_,i)=>camera(21+i*3));
+  const candidates=[{slot:1,stream:null},...live,camera(80,100),camera(81,9900,'ended')];
+  assert.deepEqual(liveCaptureCameras(candidates,10000),live);
+ }
+ assert.deepEqual(liveCaptureCameras([{stream:null}],10000),[]);
+});
 
 test('capture never accepts an ideal-only request or a resized source',()=>{
  const mode={deviceId:'one-camera',width:1920,height:1080,frameRate:30},c=exactCameraConstraints(mode);
