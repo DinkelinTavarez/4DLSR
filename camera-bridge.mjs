@@ -5,7 +5,8 @@ import {exactCameraConstraints,validCaptureMode} from './src/capture-policy.js';
 // Local capture engine for browsers whose USB camera implementation fails.
 // No external signaling, STUN, TURN, audio, or automatic recording.
 export function cameraBridge({port,body,json,fail}){
- const sessions=new Map();let engine,contextPromise,catalogPromise;
+ const sessions=new Map(),events=[];let engine,contextPromise,catalogPromise;
+ const note=(type,data={})=>{const item={at:new Date().toISOString(),type,...data};events.push(item);if(events.length>200)events.shift();console.log('[camera-bridge]',JSON.stringify(item));};
  async function getEngine(){
   if(!engine)engine=chromium.launch({channel:'chrome',headless:true,args:['--use-fake-ui-for-media-stream']}).catch(e=>{engine=null;throw e;});
   return engine;
@@ -16,7 +17,7 @@ export function cameraBridge({port,body,json,fail}){
   const page=await catalogPromise;
   return page.evaluate(async()=>{const counts={};return (await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput'&&d.deviceId).map(d=>({deviceId:d.deviceId,label:d.label,occurrence:counts[d.label]=(counts[d.label]||0)+1}));});
  }
- async function close(id){const s=sessions.get(id);if(!s)return;sessions.delete(id);await s.page?.close().catch(()=>{});}
+ async function close(id,reason='requested'){const s=sessions.get(id);if(!s)return;sessions.delete(id);await s.page?.close().catch(()=>{});note('closed',{id,label:s.label,reason});}
  const reap=setInterval(()=>{for(const [id,s]of sessions)if(Date.now()-s.touched>45000)close(id);},10000);reap.unref();
  return async(req,res,url)=>{
   if(url.pathname==='/camera-bridge-host'&&req.method==='GET'){
@@ -24,6 +25,7 @@ export function cameraBridge({port,body,json,fail}){
   }
   if(!url.pathname.startsWith('/api/camera-bridge/'))return false;
   if(url.pathname==='/api/camera-bridge/devices'&&req.method==='GET'){json(res,await catalog());return true;}
+  if(url.pathname==='/api/camera-bridge/status'&&req.method==='GET'){json(res,{active:[...sessions.entries()].map(([id,s])=>({id,label:s.label,openedAt:s.openedAt,requested:s.requested})),events});return true;}
   if(req.method!=='POST')throw fail(405,'POST required');
   const data=JSON.parse((await body(req,128*1024)).toString());
   if(url.pathname==='/api/camera-bridge/open'){
@@ -35,7 +37,7 @@ export function cameraBridge({port,body,json,fail}){
    if(matches.length!==1)throw fail(400,'Camera identity changed. Find cameras again.');
    data.deviceId=matches[0].deviceId;
    if([...sessions.values()].some(s=>s.deviceId===data.deviceId))throw fail(409,'This camera is open in another tab. Disconnect it there, or wait 45 seconds after closing that tab.');
-   const id=randomUUID(),s={deviceId:data.deviceId,label:matches[0].label,touched:Date.now(),page:null};sessions.set(id,s);
+    const id=randomUUID(),s={deviceId:data.deviceId,label:matches[0].label,touched:Date.now(),openedAt:new Date().toISOString(),requested:{captureMode:data.captureMode,width:data.width,height:data.height,frameRate:data.frameRate},page:null};sessions.set(id,s);note('opening',{id,label:s.label,requested:s.requested,active:sessions.size});
    try{
     const page=await (await context()).newPage();s.page=page;await page.goto(`http://127.0.0.1:${port}/camera-bridge-host`);
     const capture=page.evaluate(async({data,constraints})=>{
@@ -57,8 +59,8 @@ export function cameraBridge({port,body,json,fail}){
     },{data,constraints:exactCameraConstraints(data)});
     let timeout;
     const result=await Promise.race([capture,new Promise((_,reject)=>{timeout=setTimeout(()=>reject(new Error('Camera did not start within 10 seconds')),10000);})]).finally(()=>clearTimeout(timeout));
-    s.touched=Date.now();json(res,{id,...result});
-   }catch(e){await close(id);if(/OverconstrainedError/i.test(e.name+' '+e.message))throw fail(422,`Requested mode ${data.width} × ${data.height} at ${data.frameRate} FPS is not available from this camera. No lower mode was substituted.`);throw fail(503,`Local camera capture failed: ${e.message}`);}
+     s.touched=Date.now();note('opened',{id,label:s.label,settings:result.settings,active:sessions.size});json(res,{id,...result});
+    }catch(e){note('open-failed',{id,label:s.label,error:e.name||'Error',message:e.message});await close(id,'open-failed');if(/OverconstrainedError/i.test(e.name+' '+e.message))throw fail(422,`Requested mode ${data.width} × ${data.height} at ${data.frameRate} FPS is not available from this camera. No lower mode was substituted.`);throw fail(503,`Local camera capture failed: ${e.message}`);}
    return true;
   }
   if(typeof data.id!=='string')throw fail(400,'Connection ID required');
