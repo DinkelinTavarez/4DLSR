@@ -12,7 +12,7 @@ Double-click **Open Spatial Replay.cmd**, or the **Spatial Replay** shortcut on 
 4. Click **4D space**. Drag to orbit, right-drag to pan, scroll to zoom, and use **W/A/S/D** to move, **Q/E** for height. **Reset view** returns to the source camera. Space pauses/plays.
 5. **Stop & save** finalizes a normal, seekable WebM file. Open past sessions from **Recordings**. Choose **Every video frame · best quality**, **High detail · 6 depth frames/sec**, or **Quick preview · 2 depth frames/sec**, then **Prepare full recording in 4D**. Best quality follows the recording's actual frame timestamps and uses a larger depth-model input. Keep the tab open until preparation finishes. Cancel keeps completed frames; running the same profile again skips those frames.
 
-Keep the app tab open during recording. Closing it stops camera capture. The local server alone does not record, and no auto-start or background surveillance service is installed. Disconnect releases the camera.
+Keep the app tab open during recording. Closing it stops camera capture. The local server alone does not record, and no background camera capture service is installed. When private phone control is configured, the normal launch script also starts its key-protected gateway and fixed tunnel; neither component can start a recording without the open camera page. Disconnect releases the camera.
 
 ## Optional multi-camera capture
 
